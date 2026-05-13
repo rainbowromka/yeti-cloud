@@ -1,2 +1,22 @@
+# Build
 build/
+cmake-build-*/
+out/
+
+# IDE
 .vscode/
+.idea/
+
+# Qt
+*.pro.user
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+
+# Go
+server/yeti-server
+server/vendor/
+
+# OS
+.DS_Store
+Thumbs.db
