@@ -1,45 +1,41 @@
 #include "tray_icon.h"
-#include "deploy_dialog.h"
+#include "main_window.h"
 
 #include <QApplication>
-#include <QMessageBox>
 #include <QStyle>
-#include <QJsonDocument>
-#include <QJsonObject>
 
-TrayIcon::TrayIcon(QObject *parent)
-    : QObject(parent)
+TrayIcon::TrayIcon(MainWindow *mainWindow, QObject *parent)
+    : QObject(parent), m_mainWindow(mainWindow)
 {
     m_menu = new QMenu();
 
-    m_statusAction = m_menu->addAction("Сервер: проверка...");
-    m_statusAction->setEnabled(false);
-
-    m_deployAction = m_menu->addAction("Установить на сервер...");
-    connect(m_deployAction, &QAction::triggered, this, &TrayIcon::onDeployAction);
+    QAction *showAction = m_menu->addAction("Показать приложение");
+    connect(showAction, &QAction::triggered, this, &TrayIcon::onShowApp);
 
     m_menu->addSeparator();
 
-    m_exitAction = m_menu->addAction("Выход");
-    connect(m_exitAction, &QAction::triggered, this, &TrayIcon::onExit);
+    QAction *stopAction = m_menu->addAction("Остановить сервис");
+    connect(stopAction, &QAction::triggered, this, &TrayIcon::onStopService);
+
+    QAction *startAction = m_menu->addAction("Запустить сервис");
+    connect(startAction, &QAction::triggered, this, &TrayIcon::onStartService);
+
+    m_menu->addSeparator();
+
+    QAction *quitAction = m_menu->addAction("Закрыть приложение");
+    connect(quitAction, &QAction::triggered, this, &TrayIcon::onQuit);
 
     m_tray = new QSystemTrayIcon(this);
     m_tray->setContextMenu(m_menu);
     m_tray->setToolTip("Yeti Cloud");
 
-    updateIcon(false);
-
-    m_webSocket = new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this);
-    connect(m_webSocket, &QWebSocket::connected, this, [this]() {
-        m_connected = true;
-        updateIcon(true);
-        m_statusAction->setText("Сервер: онлайн");
+    connect(m_tray, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
+        if (reason == QSystemTrayIcon::Trigger) { // левый клик
+            onShowApp();
+        }
     });
-    connect(m_webSocket, &QWebSocket::disconnected, this, &TrayIcon::onDisconnected);
 
-    m_statusTimer = new QTimer(this);
-    connect(m_statusTimer, &QTimer::timeout, this, &TrayIcon::onStatusCheck);
-    m_statusTimer->start(10000);
+    updateIcon(false);
 }
 
 TrayIcon::~TrayIcon()
@@ -52,51 +48,27 @@ void TrayIcon::show()
     m_tray->show();
 }
 
-void TrayIcon::onDeployAction()
+void TrayIcon::onShowApp()
 {
-    DeployDialog dialog;
-    if (dialog.exec() == QDialog::Accepted) {
-        QString host = dialog.host();
-        QString user = dialog.user();
-        QString password = dialog.password();
-
-        m_tray->showMessage("Yeti Cloud", "Подключение к " + host + "...");
-
-        m_serverUrl = "ws://" + host + ":8080/ws";
-        connectToServer(m_serverUrl);
-    }
+    m_mainWindow->show();
+    m_mainWindow->raise();
+    m_mainWindow->activateWindow();
 }
 
-void TrayIcon::onConnectToServer()
+void TrayIcon::onStopService()
 {
-    if (!m_serverUrl.isEmpty()) {
-        m_webSocket->open(QUrl(m_serverUrl));
-    }
+    // TODO: остановка сервиса синхронизации
+    m_tray->showMessage("Yeti Cloud", "Сервис остановлен");
 }
 
-void TrayIcon::onDisconnected()
+void TrayIcon::onStartService()
 {
-    m_connected = false;
-    updateIcon(false);
-    m_statusAction->setText("Сервер: оффлайн");
+    // TODO: запуск сервиса синхронизации
+    m_tray->showMessage("Yeti Cloud", "Сервис запущен");
 }
 
-void TrayIcon::onStatusCheck()
+void TrayIcon::onQuit()
 {
-    if (!m_serverUrl.isEmpty() && m_webSocket->state() == QAbstractSocket::UnconnectedState) {
-        connectToServer(m_serverUrl);
-    }
-
-    if (m_webSocket->state() == QAbstractSocket::ConnectedState) {
-        m_webSocket->ping();
-    }
-}
-
-void TrayIcon::onExit()
-{
-    if (m_webSocket->state() == QAbstractSocket::ConnectedState) {
-        m_webSocket->close();
-    }
     QApplication::quit();
 }
 
@@ -105,9 +77,4 @@ void TrayIcon::updateIcon(bool connected)
     QIcon icon = QApplication::style()->standardIcon(
         connected ? QStyle::SP_ComputerIcon : QStyle::SP_MessageBoxWarning);
     m_tray->setIcon(icon);
-}
-
-void TrayIcon::connectToServer(const QString &url)
-{
-    m_webSocket->open(QUrl(url));
 }
