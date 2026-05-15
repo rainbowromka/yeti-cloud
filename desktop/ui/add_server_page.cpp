@@ -1,8 +1,10 @@
 #include "add_server_page.h"
+#include "ssh_deployer.h"
 
 #include <QVBoxLayout>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QIntValidator>
 
 AddServerPage::AddServerPage(QWidget *parent)
     : QWidget(parent)
@@ -24,15 +26,24 @@ AddServerPage::AddServerPage(QWidget *parent)
 
     m_hostEdit = new QLineEdit();
     m_hostEdit->setPlaceholderText("45.67.89.123 или my-vps.com");
+    m_hostEdit->setText("localhost");
     form->addRow("Хост:", m_hostEdit);
+
+    m_portEdit = new QLineEdit();
+    m_portEdit->setPlaceholderText("22");
+    m_portEdit->setText("2222");
+    m_portEdit->setValidator(new QIntValidator(1, 65535, this));
+    form->addRow("Порт:", m_portEdit);
 
     m_userEdit = new QLineEdit();
     m_userEdit->setPlaceholderText("root");
+    m_userEdit->setText("root");
     form->addRow("Пользователь:", m_userEdit);
 
     m_passwordEdit = new QLineEdit();
     m_passwordEdit->setEchoMode(QLineEdit::Password);
     m_passwordEdit->setPlaceholderText("••••••••");
+    m_passwordEdit->setText("test123");
     form->addRow("Пароль:", m_passwordEdit);
 
     layout->addWidget(formGroup);
@@ -57,15 +68,33 @@ void AddServerPage::onDeploy()
     QString host = m_hostEdit->text();
     QString user = m_userEdit->text();
     QString password = m_passwordEdit->text();
+    int port = m_portEdit->text().toInt();
 
     if (host.isEmpty() || user.isEmpty() || password.isEmpty()) {
         m_statusLabel->setText("Заполните все поля.");
         return;
     }
 
-    m_statusLabel->setText("Подключение к " + host + "...");
+     m_statusLabel->setText("Подключение к " + host + ":" + QString::number(port) + "...");
     m_deployBtn->setEnabled(false);
 
-    // TODO: вызов SshDeployer из yeti-core
-    emit serverAdded(host, user, password);
+    SshDeployer::Config config;
+    config.host = host.toStdString();
+    config.user = user.toStdString();
+    config.password = password.toStdString();
+    config.port = port;
+
+    SshDeployer deployer(config);
+
+    bool ok = deployer.deploy([this](const std::string &step) {
+        m_statusLabel->setText(QString::fromStdString(step));
+    });
+
+    if (ok) {
+        m_statusLabel->setText("Готово! Сервер запущен.");
+        emit serverAdded(host, user, password);
+    } else {
+        m_statusLabel->setText("Ошибка: " + QString::fromStdString(deployer.lastError()));
+        m_deployBtn->setEnabled(true);
+    }
 }

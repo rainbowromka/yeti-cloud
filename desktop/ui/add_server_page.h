@@ -22,6 +22,7 @@ private:
     QLineEdit *m_hostEdit;
     QLineEdit *m_userEdit;
     QLineEdit *m_passwordEdit;
+    QLineEdit *m_portEdit;
     QPushButton *m_deployBtn;
     QLabel *m_statusLabel;
 };
