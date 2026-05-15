@@ -9,6 +9,5 @@ set_target_properties(yeti-core PROPERTIES
 
 target_include_directories(yeti-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-# libssh2 будет добавлен позже
-# find_package(libssh2 REQUIRED)
-# target_link_libraries(yeti-core PUBLIC libssh2::libssh2)
+find_package(libssh2 CONFIG REQUIRED)
+target_link_libraries(yeti-core PUBLIC libssh2::libssh2)
