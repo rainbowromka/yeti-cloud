@@ -7,8 +7,10 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
 
-    MainWindow mainWindow;
-    TrayIcon trayIcon(&mainWindow);
+    TrayIcon trayIcon(nullptr);          // сначала TrayIcon, временно без окна
+    MainWindow mainWindow(&trayIcon);    // MainWindow получает указатель на TrayIcon
+    trayIcon.setMainWindow(&mainWindow); // теперь TrayIcon знает о MainWindow
+
     trayIcon.show();
 
     return app.exec();

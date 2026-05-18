@@ -1,16 +1,17 @@
 #include "main_window.h"
 #include "add_server_page.h"
 #include "status_page.h"
+#include "tray_icon.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QDesktopServices>
 #include <QUrl>
-#include <QDIr>
+#include <QDir>
 #include <QMessageBox>
 
-MainWindow::MainWindow(QWidget *parent)
-    : QWidget(parent)
+MainWindow::MainWindow(TrayIcon *trayIcon, QWidget *parent)
+    : QWidget(parent), m_trayIcon(trayIcon)
 {
     setWindowTitle("Yeti Cloud");
     setFixedSize(360, 600);
@@ -32,25 +33,22 @@ void MainWindow::setupUi()
     headerLayout->setContentsMargins(8, 4, 8, 4);
 
     m_homeBtn = new QPushButton("⌂");
-    m_homeBtn->setStyleSheet("border: none; font-size: 18px; color: white;");
     m_homeBtn->setFixedSize(32, 32);
-    m_homeBtn->setStyleSheet("border: none; font-size: 18px;");
+    m_homeBtn->setStyleSheet("border: none; font-size: 18px; color: white;");
     connect(m_homeBtn, &QPushButton::clicked, this, [this]() { navigateTo(0); });
 
     m_titleLabel = new QLabel("Yeti Cloud");
-    m_titleLabel->setStyleSheet("font-weight: bold; font-size: 16px;");
+    m_titleLabel->setStyleSheet("font-weight: bold; font-size: 16px; color: white;");
 
     m_folderBtn = new QPushButton("📁");
-    m_folderBtn->setStyleSheet("border: none; font-size: 16px; color: white;");
     m_folderBtn->setFixedSize(32, 32);
-    m_folderBtn->setStyleSheet("border: none; font-size: 16px;");
+    m_folderBtn->setStyleSheet("border: none; font-size: 16px; color: white;");
     m_folderBtn->setToolTip("Открыть папку облака");
     connect(m_folderBtn, &QPushButton::clicked, this, &MainWindow::onOpenFolder);
 
     m_menuBtn = new QPushButton("⋮");
-    m_menuBtn->setStyleSheet("border: none; font-size: 18px; font-weight: bold; color: white;");
     m_menuBtn->setFixedSize(32, 32);
-    m_menuBtn->setStyleSheet("border: none; font-size: 18px; font-weight: bold;");
+    m_menuBtn->setStyleSheet("border: none; font-size: 18px; font-weight: bold; color: white;");
     connect(m_menuBtn, &QPushButton::clicked, this, &MainWindow::onMenuButton);
 
     headerLayout->addWidget(m_homeBtn);
@@ -65,6 +63,8 @@ void MainWindow::setupUi()
 
     m_statusPage = new StatusPage();
     m_addServerPage = new AddServerPage();
+
+    connect(m_addServerPage, &AddServerPage::serverAdded, this, &MainWindow::onServerAdded);
 
     m_stack->addWidget(m_statusPage);    // index 0 — статус
     m_stack->addWidget(m_addServerPage); // index 1 — добавить сервер
@@ -97,6 +97,15 @@ void MainWindow::onAddServer()
 
 void MainWindow::onOpenFolder()
 {
-    // TODO: открыть папку синхронизации в проводнике
     QDesktopServices::openUrl(QUrl::fromLocalFile(QDir::homePath() + "/YetiCloud"));
+}
+
+void MainWindow::onServerAdded(const QString &host, const QString &user, const QString &password)
+{
+    Q_UNUSED(user)
+    Q_UNUSED(password)
+
+    QString url = "ws://" + host + ":8080/ws";
+    m_trayIcon->connectToServer(url);
+    navigateTo(0);
 }

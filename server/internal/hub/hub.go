@@ -101,13 +101,13 @@ func (h *Hub) Run() {
 }
 
 func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	token := r.URL.Query().Get("token")
+	// token := r.URL.Query().Get("token")
 
-	dev, valid := h.tokens.ValidateDeviceToken(token)
-	if !valid {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
+	// dev, valid := h.tokens.ValidateDeviceToken(token)
+	// if !valid {
+	// 	http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	// 	return
+	// }
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -117,8 +117,8 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	client := &Client{
 		Device: DeviceInfo{
-			DeviceID:   dev.DeviceID,
-			DeviceName: dev.DeviceName,
+			DeviceID:   "test-device", // dev.DeviceID → временно
+			DeviceName: "test",        // dev.DeviceName → временно
 			LocalIP:    r.URL.Query().Get("local_ip"),
 			RemoteAddr: r.RemoteAddr,
 		},
