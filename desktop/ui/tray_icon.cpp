@@ -3,6 +3,9 @@
 
 #include <QApplication>
 #include <QStyle>
+#include <QMessageBox>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 TrayIcon::TrayIcon(MainWindow *mainWindow, QObject *parent)
     : QObject(parent), m_mainWindow(mainWindow)
@@ -30,12 +33,21 @@ TrayIcon::TrayIcon(MainWindow *mainWindow, QObject *parent)
     m_tray->setToolTip("Yeti Cloud");
 
     connect(m_tray, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
-        if (reason == QSystemTrayIcon::Trigger) { // левый клик
+        if (reason == QSystemTrayIcon::Trigger) {
             onShowApp();
         }
     });
 
     updateIcon(false);
+
+    // WebSocket для проверки статуса
+    m_webSocket = new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this);
+    connect(m_webSocket, &QWebSocket::connected, this, &TrayIcon::onConnected);
+    connect(m_webSocket, &QWebSocket::disconnected, this, &TrayIcon::onDisconnected);
+
+    m_statusTimer = new QTimer(this);
+    connect(m_statusTimer, &QTimer::timeout, this, &TrayIcon::onStatusCheck);
+    m_statusTimer->start(10000);
 }
 
 TrayIcon::~TrayIcon()
@@ -48,28 +60,68 @@ void TrayIcon::show()
     m_tray->show();
 }
 
+void TrayIcon::setMainWindow(MainWindow *mainWindow)
+{
+    m_mainWindow = mainWindow;
+}
+
+void TrayIcon::connectToServer(const QString &url)
+{
+    m_serverUrl = url;
+    m_webSocket->open(QUrl(m_serverUrl));
+}
+
 void TrayIcon::onShowApp()
 {
-    m_mainWindow->show();
-    m_mainWindow->raise();
-    m_mainWindow->activateWindow();
+    if (m_mainWindow) {
+        m_mainWindow->show();
+        m_mainWindow->raise();
+        m_mainWindow->activateWindow();
+    }
 }
 
 void TrayIcon::onStopService()
 {
-    // TODO: остановка сервиса синхронизации
     m_tray->showMessage("Yeti Cloud", "Сервис остановлен");
 }
 
 void TrayIcon::onStartService()
 {
-    // TODO: запуск сервиса синхронизации
     m_tray->showMessage("Yeti Cloud", "Сервис запущен");
 }
 
 void TrayIcon::onQuit()
 {
+    if (m_webSocket->state() == QAbstractSocket::ConnectedState) {
+        m_webSocket->close();
+    }
     QApplication::quit();
+}
+
+void TrayIcon::onConnected()
+{
+    m_connected = true;
+    updateIcon(true);
+    m_tray->setToolTip("Yeti Cloud — онлайн");
+    m_tray->showMessage("Yeti Cloud", "Подключено к серверу");
+}
+
+void TrayIcon::onDisconnected()
+{
+    m_connected = false;
+    updateIcon(false);
+    m_tray->setToolTip("Yeti Cloud — оффлайн");
+}
+
+void TrayIcon::onStatusCheck()
+{
+    if (!m_serverUrl.isEmpty() && m_webSocket->state() == QAbstractSocket::UnconnectedState) {
+        connectToServer(m_serverUrl);
+    }
+
+    if (m_webSocket->state() == QAbstractSocket::ConnectedState) {
+        m_webSocket->ping();
+    }
 }
 
 void TrayIcon::updateIcon(bool connected)

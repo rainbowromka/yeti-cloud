@@ -8,13 +8,14 @@
 
 class AddServerPage;
 class StatusPage;
+class TrayIcon;
 
 class MainWindow : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit MainWindow(QWidget *parent = nullptr);
+    explicit MainWindow(TrayIcon *trayIcon, QWidget *parent = nullptr);
 
     void navigateTo(int index);
 
@@ -22,10 +23,12 @@ private slots:
     void onMenuButton();
     void onAddServer();
     void onOpenFolder();
+    void onServerAdded(const QString &host, const QString &user, const QString &password);
 
 private:
     void setupUi();
 
+    TrayIcon *m_trayIcon;
     QStackedWidget *m_stack;
 
     QLabel *m_titleLabel;

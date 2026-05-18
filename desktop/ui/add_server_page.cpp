@@ -5,6 +5,7 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QIntValidator>
+#include <QtConcurrent/QtConcurrent>
 
 AddServerPage::AddServerPage(QWidget *parent)
     : QWidget(parent)
@@ -75,26 +76,42 @@ void AddServerPage::onDeploy()
         return;
     }
 
-     m_statusLabel->setText("Подключение к " + host + ":" + QString::number(port) + "...");
+    m_statusLabel->setText("Подключение к " + host + ":" + QString::number(port) + "...");
     m_deployBtn->setEnabled(false);
 
-    SshDeployer::Config config;
-    config.host = host.toStdString();
-    config.user = user.toStdString();
-    config.password = password.toStdString();
-    config.port = port;
+    auto config = new SshDeployer::Config;
+    config->host = host.toStdString();
+    config->user = user.toStdString();
+    config->password = password.toStdString();
+    config->port = port;
 
-    SshDeployer deployer(config);
+    auto *deployer = new SshDeployer(*config);
 
-    bool ok = deployer.deploy([this](const std::string &step) {
-        m_statusLabel->setText(QString::fromStdString(step));
+    auto *watcher = new QFutureWatcher<bool>(this);
+    QObject::connect(watcher, &QFutureWatcher<bool>::finished, this, [this, deployer, watcher, config]() {
+        bool ok = watcher->result();
+        if (ok) {
+            m_statusLabel->setText("Готово! Сервер запущен.");
+            emit serverAdded(
+                QString::fromStdString(config->host),
+                QString::fromStdString(config->user),
+                QString::fromStdString(config->password));
+        } else {
+            m_statusLabel->setText("Ошибка: " + QString::fromStdString(deployer->lastError()));
+            m_deployBtn->setEnabled(true);
+        }
+        delete deployer;
+        delete config;
+        watcher->deleteLater();
     });
 
-    if (ok) {
-        m_statusLabel->setText("Готово! Сервер запущен.");
-        emit serverAdded(host, user, password);
-    } else {
-        m_statusLabel->setText("Ошибка: " + QString::fromStdString(deployer.lastError()));
-        m_deployBtn->setEnabled(true);
-    }
+    QFuture<bool> future = QtConcurrent::run([deployer, this]() {
+        return deployer->deploy([this](const std::string &step) {
+            QMetaObject::invokeMethod(this, [this, step]() {
+                m_statusLabel->setText(QString::fromStdString(step));
+            }, Qt::QueuedConnection);
+        });
+    });
+
+    watcher->setFuture(future);
 }

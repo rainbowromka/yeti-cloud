@@ -4,4 +4,5 @@ services:
     build: .
     ports:
       - "2222:22"
+      - "8080:8080"
     container_name: yeti-test-vps
