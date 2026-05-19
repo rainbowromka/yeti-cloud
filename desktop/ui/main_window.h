@@ -23,7 +23,8 @@ private slots:
     void onMenuButton();
     void onAddServer();
     void onOpenFolder();
-    void onServerAdded(const QString &host, const QString &user, const QString &password);
+    void onServerAdded(const QString &host, const QString &adminKey);
+    void onConnectionStatusChanged(bool connected);
 
 private:
     void setupUi();

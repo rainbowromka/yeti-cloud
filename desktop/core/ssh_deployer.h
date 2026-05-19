@@ -26,13 +26,16 @@ public:
     bool deploy(ProgressCallback onProgress);
     std::string lastError() const;
     const Config& config() const { return m_config; }
+    const std::string& adminKey() const { return m_adminKey; }
 
 private:
     Config m_config;
     std::string m_error;
-    ssh_session m_session = nullptr;   // ← теперь поле класса, не глобал
+    std::string m_adminKey;
+    ssh_session m_session = nullptr;
 
     void disconnect();
+    bool uploadConfigFile(const std::string &localPath, const std::string &remotePath);
 
     bool connectSsh();
     bool execCommand(const std::string &cmd, std::string &output);

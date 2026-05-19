@@ -13,7 +13,7 @@ public:
     explicit AddServerPage(QWidget *parent = nullptr);
 
 signals:
-    void serverAdded(const QString &host, const QString &user, const QString &password);
+    void serverAdded(const QString &host, const QString &adminKey);
 
 private slots:
     void onDeploy();

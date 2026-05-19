@@ -41,17 +41,19 @@ type Hub struct {
 	unregister chan *Client
 	broadcast  chan *Message
 	tokens     *auth.TokenStore
+	adminKey   string
 	mu         sync.RWMutex
 	stop       chan struct{}
 }
 
-func NewHub(tokens *auth.TokenStore) *Hub {
+func NewHub(tokens *auth.TokenStore, adminKey string) *Hub {
 	return &Hub{
 		clients:    make(map[string]*Client),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		broadcast:  make(chan *Message, 256),
 		tokens:     tokens,
+		adminKey:   adminKey,
 		stop:       make(chan struct{}),
 	}
 }
@@ -101,13 +103,17 @@ func (h *Hub) Run() {
 }
 
 func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	// token := r.URL.Query().Get("token")
+	token := r.URL.Query().Get("token")
 
-	// dev, valid := h.tokens.ValidateDeviceToken(token)
-	// if !valid {
-	// 	http.Error(w, "Unauthorized", http.StatusUnauthorized)
-	// 	return
-	// }
+	// Accept admin key or valid device token
+	if token == "" || token != h.adminKey {
+		dev, valid := h.tokens.ValidateDeviceToken(token)
+		if !valid {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		_ = dev // device info available for future use
+	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -117,14 +123,21 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	client := &Client{
 		Device: DeviceInfo{
-			DeviceID:   "test-device", // dev.DeviceID → временно
-			DeviceName: "test",        // dev.DeviceName → временно
+			DeviceID:   r.URL.Query().Get("device_id"),
+			DeviceName: r.URL.Query().Get("device_name"),
 			LocalIP:    r.URL.Query().Get("local_ip"),
 			RemoteAddr: r.RemoteAddr,
 		},
 		Conn: conn,
 		Send: make(chan []byte, 256),
 		Hub:  h,
+	}
+
+	if client.Device.DeviceID == "" {
+		client.Device.DeviceID = "admin-client"
+	}
+	if client.Device.DeviceName == "" {
+		client.Device.DeviceName = "Admin"
 	}
 
 	h.register <- client

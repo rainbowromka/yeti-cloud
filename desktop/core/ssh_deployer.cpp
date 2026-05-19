@@ -5,10 +5,42 @@
 #include <fstream>
 #include <filesystem>
 #include <cstring>
+#include <sstream>
+#include <iomanip>
+#include <random>
 
 #ifdef _WIN32
 #include <windows.h>
 #endif
+
+// ========== Генератор admin_key ==========
+
+static std::string generateAdminKey()
+{
+    std::random_device rd;
+    std::mt19937_64 gen(rd());
+    std::uniform_int_distribution<int> dist(0, 15);
+
+    std::ostringstream oss;
+    for (int i = 0; i < 64; ++i) {
+        int val = dist(gen);
+        oss << std::hex << val;
+    }
+    return oss.str();
+}
+
+// ========== Путь к папке с exe ==========
+
+static std::filesystem::path exeDir()
+{
+#ifdef _WIN32
+    char exeBuf[MAX_PATH];
+    GetModuleFileNameA(NULL, exeBuf, MAX_PATH);
+    return std::filesystem::path(exeBuf).parent_path();
+#else
+    return std::filesystem::current_path();
+#endif
+}
 
 // ========== Конструктор / Деструктор ==========
 
@@ -40,6 +72,9 @@ std::string SshDeployer::lastError() const
 
 bool SshDeployer::deploy(ProgressCallback onProgress)
 {
+    // Генерируем admin_key
+    m_adminKey = generateAdminKey();
+
     onProgress("Подключение по SSH...");
     if (!connectSsh()) return false;
 
@@ -53,6 +88,28 @@ bool SshDeployer::deploy(ProgressCallback onProgress)
 
     onProgress("Загрузка серверной части...");
     if (!uploadFile("yeti-server", "/opt/yeti-server/yeti-server")) return false;
+
+    // Создаём yeti-server-config.json локально и загружаем на сервер
+    onProgress("Загрузка конфигурации сервера...");
+    {
+        std::filesystem::path localCfg = exeDir() / "yeti-server-config.json";
+        std::ofstream cfgFile(localCfg);
+        cfgFile << "{\n  \"admin_key\": \"" << m_adminKey << "\"\n}\n";
+        cfgFile.close();
+
+        bool ok = uploadConfigFile(localCfg.string(), "/opt/yeti-server/yeti-server-config.json");
+        std::filesystem::remove(localCfg);
+        if (!ok) return false;
+    }
+
+    // Создаём yeti-desktop-config.json локально
+    onProgress("Сохранение конфигурации клиента...");
+    {
+        std::filesystem::path localCfg = exeDir() / "yeti-desktop-config.json";
+        std::ofstream cfgFile(localCfg);
+        cfgFile << "{\n  \"admin_key\": \"" << m_adminKey << "\"\n}\n";
+        cfgFile.close();
+    }
 
     onProgress("Запуск сервера...");
     if (!startService()) return false;
@@ -150,6 +207,63 @@ bool SshDeployer::execCommand(const std::string &cmd, std::string &output)
     ssh_channel_close(channel);
     ssh_channel_free(channel);
 
+    return true;
+}
+
+// ========== Загрузка конфиг-файла через SCP ==========
+
+bool SshDeployer::uploadConfigFile(const std::string &localPath, const std::string &remotePath)
+{
+    std::filesystem::path remoteDir = std::filesystem::path(remotePath).parent_path();
+    std::string mkdirCmd = "mkdir -p " + remoteDir.string() + " && chmod 755 " + remoteDir.string();
+    std::string dummy;
+    execCommand(mkdirCmd, dummy);
+
+    std::ifstream file(localPath, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        m_error = "Не удалось открыть конфиг: " + localPath;
+        return false;
+    }
+
+    size_t fileSize = file.tellg();
+    file.seekg(0);
+
+    ssh_scp scp = ssh_scp_new(m_session, SSH_SCP_WRITE, remoteDir.string().c_str());
+    if (!scp) {
+        m_error = "SCP: " + std::string(ssh_get_error(m_session));
+        return false;
+    }
+
+    int rc = ssh_scp_init(scp);
+    if (rc != SSH_OK) {
+        ssh_scp_free(scp);
+        m_error = "SCP init: " + std::string(ssh_get_error(m_session));
+        return false;
+    }
+
+    std::string fileName = std::filesystem::path(remotePath).filename().string();
+    rc = ssh_scp_push_file(scp, fileName.c_str(), fileSize, 0644);
+    if (rc != SSH_OK) {
+        ssh_scp_close(scp);
+        ssh_scp_free(scp);
+        m_error = "SCP push: " + std::string(ssh_get_error(m_session));
+        return false;
+    }
+
+    const size_t CHUNK = 4096;
+    char buffer[CHUNK];
+    while (file.read(buffer, CHUNK) || file.gcount() > 0) {
+        rc = ssh_scp_write(scp, buffer, file.gcount());
+        if (rc != SSH_OK) {
+            ssh_scp_close(scp);
+            ssh_scp_free(scp);
+            m_error = "SCP write error";
+            return false;
+        }
+    }
+
+    ssh_scp_close(scp);
+    ssh_scp_free(scp);
     return true;
 }
 
