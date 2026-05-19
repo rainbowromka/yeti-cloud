@@ -20,6 +20,9 @@ public:
     void setMainWindow(MainWindow *mainWindow);
     void connectToServer(const QString &url);
 
+signals:
+    void connectionStatusChanged(bool connected);
+
 private slots:
     void onShowApp();
     void onStopService();

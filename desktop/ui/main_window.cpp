@@ -9,6 +9,8 @@
 #include <QUrl>
 #include <QDir>
 #include <QMessageBox>
+#include <QFileInfo>
+#include <QCoreApplication>
 
 MainWindow::MainWindow(TrayIcon *trayIcon, QWidget *parent)
     : QWidget(parent), m_trayIcon(trayIcon)
@@ -70,6 +72,9 @@ void MainWindow::setupUi()
     m_stack->addWidget(m_addServerPage); // index 1 — добавить сервер
 
     mainLayout->addWidget(m_stack, 1);
+
+    // Связь статуса с TrayIcon
+    connect(m_trayIcon, &TrayIcon::connectionStatusChanged, this, &MainWindow::onConnectionStatusChanged);
 }
 
 void MainWindow::navigateTo(int index)
@@ -100,12 +105,22 @@ void MainWindow::onOpenFolder()
     QDesktopServices::openUrl(QUrl::fromLocalFile(QDir::homePath() + "/YetiCloud"));
 }
 
-void MainWindow::onServerAdded(const QString &host, const QString &user, const QString &password)
+void MainWindow::onServerAdded(const QString &host, const QString &adminKey)
 {
-    Q_UNUSED(user)
-    Q_UNUSED(password)
-
-    QString url = "ws://" + host + ":8080/ws";
+    QString url = "ws://" + host + ":8080/ws?token=" + adminKey;
     m_trayIcon->connectToServer(url);
+
+    m_statusPage->setServerAddress(host + ":8080");
+    m_statusPage->setAdminKey(adminKey);
+
+    // Проверяем наличие конфига
+    QFileInfo cfgInfo(QCoreApplication::applicationDirPath() + "/yeti-desktop-config.json");
+    m_statusPage->setConfigPresent(cfgInfo.exists());
+
     navigateTo(0);
+}
+
+void MainWindow::onConnectionStatusChanged(bool connected)
+{
+    m_statusPage->setConnected(connected);
 }

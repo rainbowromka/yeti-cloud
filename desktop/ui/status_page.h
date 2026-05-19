@@ -10,8 +10,15 @@ class StatusPage : public QWidget
 public:
     explicit StatusPage(QWidget *parent = nullptr);
 
-    void setStatus(const QString &text);
+    void setServerAddress(const QString &address);
+    void setConnected(bool connected);
+    void setConfigPresent(bool present);
+    void setAdminKey(const QString &key);
 
 private:
-    QLabel *m_statusLabel;
+    QLabel *m_connectionIcon;
+    QLabel *m_connectionLabel;
+    QLabel *m_serverLabel;
+    QLabel *m_configLabel;
+    QLabel *m_keyLabel;
 };

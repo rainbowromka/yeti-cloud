@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/rainbowromka/yeti-cloud/server/internal/auth"
+	"github.com/rainbowromka/yeti-cloud/server/internal/config"
 	"github.com/rainbowromka/yeti-cloud/server/internal/hub"
 )
 
@@ -17,8 +18,11 @@ func main() {
 		port = "8080"
 	}
 
+	// Load or create server config with admin key
+	cfg := config.LoadOrCreate()
+
 	tokenStore := auth.NewTokenStore()
-	wsHub := hub.NewHub(tokenStore)
+	wsHub := hub.NewHub(tokenStore, cfg.AdminKey)
 
 	go wsHub.Run()
 

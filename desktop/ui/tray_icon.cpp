@@ -104,6 +104,7 @@ void TrayIcon::onConnected()
     updateIcon(true);
     m_tray->setToolTip("Yeti Cloud — онлайн");
     m_tray->showMessage("Yeti Cloud", "Подключено к серверу");
+    emit connectionStatusChanged(true);
 }
 
 void TrayIcon::onDisconnected()
@@ -111,6 +112,7 @@ void TrayIcon::onDisconnected()
     m_connected = false;
     updateIcon(false);
     m_tray->setToolTip("Yeti Cloud — оффлайн");
+    emit connectionStatusChanged(false);
 }
 
 void TrayIcon::onStatusCheck()

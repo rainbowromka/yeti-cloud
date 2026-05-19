@@ -94,8 +94,7 @@ void AddServerPage::onDeploy()
             m_statusLabel->setText("Готово! Сервер запущен.");
             emit serverAdded(
                 QString::fromStdString(config->host),
-                QString::fromStdString(config->user),
-                QString::fromStdString(config->password));
+                QString::fromStdString(deployer->adminKey()));
         } else {
             m_statusLabel->setText("Ошибка: " + QString::fromStdString(deployer->lastError()));
             m_deployBtn->setEnabled(true);
