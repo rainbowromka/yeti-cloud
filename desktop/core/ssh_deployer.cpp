@@ -107,10 +107,13 @@ bool SshDeployer::deploy(ProgressCallback onProgress)
     {
         std::filesystem::path localCfg = exeDir() / "yeti-desktop-config.json";
         std::ofstream cfgFile(localCfg);
-        cfgFile << "{\n  \"admin_key\": \"" << m_adminKey << "\"\n}\n";
+        cfgFile << "{\n"
+                << "  \"admin_key\": \"" << m_adminKey << "\",\n"
+                << "  \"server_port\":8080\n"
+                << "  \"server_port\": " << m_config.port << "\n"
+                << "}\n";
         cfgFile.close();
     }
-
     onProgress("Запуск сервера...");
     if (!startService()) return false;
 
