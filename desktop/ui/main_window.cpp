@@ -11,6 +11,9 @@
 #include <QMessageBox>
 #include <QFileInfo>
 #include <QCoreApplication>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 MainWindow::MainWindow(TrayIcon *trayIcon, QWidget *parent)
     : QWidget(parent), m_trayIcon(trayIcon)
@@ -18,6 +21,7 @@ MainWindow::MainWindow(TrayIcon *trayIcon, QWidget *parent)
     setWindowTitle("Yeti Cloud");
     setFixedSize(360, 600);
     setupUi();
+    tryAutoConnect();
 }
 
 void MainWindow::setupUi()
@@ -123,4 +127,44 @@ void MainWindow::onServerAdded(const QString &host, const QString &adminKey)
 void MainWindow::onConnectionStatusChanged(bool connected)
 {
     m_statusPage->setConnected(connected);
+}
+
+void MainWindow::tryAutoConnect()
+{
+    QString configPath = QCoreApplication::applicationDirPath() + "/yeti-desktop-config.json";
+    QFileInfo cfgInfo(configPath);
+
+    if (!cfgInfo.exists()) {
+        return;
+    }
+
+    QFile file(configPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return;
+    }
+
+    QByteArray data = file.readAll();
+    file.close();
+
+    QJsonDocument doc = QJsonDocument::fromJson(data);
+    if (!doc.isObject()) {
+        return;
+    }
+
+    QJsonObject obj = doc.object();
+
+    QString adminKey = obj.value("admin_key").toString();
+    QString host = obj.value("server_host").toString();
+    int port = obj.value("server_port").toInt(8080);
+
+    if (adminKey.isEmpty() || host.isEmpty()) {
+        return;
+    }
+
+    QString url = "ws://" + host + ":" + QString::number(port) + "/ws?token=" + adminKey;
+    m_trayIcon->connectToServer(url);
+
+    m_statusPage->setServerAddress(host + ":" + QString::number(port));
+    m_statusPage->setAdminKey(adminKey);
+    m_statusPage->setConfigPresent(true);
 }

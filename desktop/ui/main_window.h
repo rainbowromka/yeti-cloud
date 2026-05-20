@@ -28,6 +28,7 @@ private slots:
 
 private:
     void setupUi();
+    void tryAutoConnect();
 
     TrayIcon *m_trayIcon;
     QStackedWidget *m_stack;
