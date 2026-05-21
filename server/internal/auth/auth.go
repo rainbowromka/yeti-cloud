@@ -58,21 +58,24 @@ func (ts *TokenStore) GenerateAdminToken() string {
 	return token
 }
 
-func (ts *TokenStore) GenerateInviteToken() string {
+// Изменение: теперь возвращает (string, time.Time)
+func (ts *TokenStore) GenerateInviteToken() (string, time.Time) {
 	token := generateToken()
 	hash := hashToken(token)
 
 	ts.mu.Lock()
-	ts.tokens[hash] = &TokenInfo{
+	info := &TokenInfo{
 		Hash:      hash,
 		Type:      TokenInvite,
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 		Used:      false,
 	}
+	ts.tokens[hash] = info
 	ts.mu.Unlock()
 
-	return token
+	// Изменение: возвращаем и токен, и время истечения
+	return token, info.ExpiresAt
 }
 
 func (ts *TokenStore) GenerateDeviceToken(deviceID, deviceName string) string {
@@ -141,6 +144,23 @@ func (ts *TokenStore) ValidateDeviceToken(token string) (*DeviceInfo, bool) {
 		DeviceID:   info.DeviceID,
 		DeviceName: info.DeviceName,
 	}, true
+}
+
+// Добавлено: новый метод GetDevices
+func (ts *TokenStore) GetDevices() []DeviceInfo {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+
+	var devices []DeviceInfo
+	for _, info := range ts.tokens {
+		if info.Type == TokenDevice {
+			devices = append(devices, DeviceInfo{
+				DeviceID:   info.DeviceID,
+				DeviceName: info.DeviceName,
+			})
+		}
+	}
+	return devices
 }
 
 func (ts *TokenStore) validate(token string, tokenType TokenType) bool {

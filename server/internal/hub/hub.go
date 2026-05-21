@@ -150,6 +150,17 @@ func (h *Hub) Stop() {
 	close(h.stop)
 }
 
+func (h *Hub) GetOnlineDeviceIDs() []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	ids := make([]string, 0, len(h.clients))
+	for id := range h.clients {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 func (h *Hub) checkLocalPeers(client *Client) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
