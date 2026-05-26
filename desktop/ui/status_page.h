@@ -14,6 +14,7 @@ public:
     void setConnected(bool connected);
     void setConfigPresent(bool present);
     void setAdminKey(const QString &key);
+    void setStatusText(const QString &text);
 
 private:
     QLabel *m_connectionIcon;
@@ -21,4 +22,5 @@ private:
     QLabel *m_serverLabel;
     QLabel *m_configLabel;
     QLabel *m_keyLabel;
+    QLabel *m_statusLabel;
 };

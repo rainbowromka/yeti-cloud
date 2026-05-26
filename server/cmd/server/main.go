@@ -22,8 +22,8 @@ func main() {
 	// Load or create server config with admin key
 	cfg := config.LoadOrCreate()
 
-	tokenStore := auth.NewTokenStore()
-	wsHub := hub.NewHub(tokenStore, cfg.AdminKey)
+	tokenStore := auth.NewTokenStore(cfg)
+	wsHub := hub.NewHub(tokenStore)
 
 	go wsHub.Run()
 

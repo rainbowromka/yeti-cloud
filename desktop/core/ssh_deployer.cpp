@@ -1,4 +1,5 @@
 #include "ssh_deployer.h"
+#include "log_buffer.h"
 
 #include <libssh/libssh.h>
 #include <libssh/sftp.h>
@@ -63,34 +64,26 @@ void SshDeployer::disconnect()
     }
 }
 
-std::string SshDeployer::lastError() const
-{
-    return m_error;
-}
-
 // ========== Главный метод ==========
 
-bool SshDeployer::deploy(ProgressCallback onProgress)
+bool SshDeployer::deploy()
 {
-    // Генерируем admin_key
     m_adminKey = generateAdminKey();
 
-    onProgress("Подключение по SSH...");
+    LogBuffer::instance()->add("Connecting via SSH...");
     if (!connectSsh()) return false;
 
-    // Проверка, что SSH живой
-    onProgress("Проверка соединения...");
+    LogBuffer::instance()->add("Checking connection...");
     std::string testOut;
     if (!execCommand("echo OK", testOut) || testOut.find("OK") == std::string::npos) {
-        m_error = "SSH-соединение установлено, но команды не выполняются";
+        LogBuffer::instance()->add("ERROR: SSH connected but commands not executed");
         return false;
     }
 
-    onProgress("Загрузка серверной части...");
+    LogBuffer::instance()->add("Uploading server binary...");
     if (!uploadFile("yeti-server", "/opt/yeti-server/yeti-server")) return false;
 
-    // Создаём yeti-server-config.json локально и загружаем на сервер
-    onProgress("Загрузка конфигурации сервера...");
+    LogBuffer::instance()->add("Uploading server config...");
     {
         std::filesystem::path localCfg = exeDir() / "yeti-server-config.json";
         std::ofstream cfgFile(localCfg);
@@ -102,22 +95,22 @@ bool SshDeployer::deploy(ProgressCallback onProgress)
         if (!ok) return false;
     }
 
-    // Создаём yeti-desktop-config.json локально
-    onProgress("Сохранение конфигурации клиента...");
+    LogBuffer::instance()->add("Saving client config...");
     {
         std::filesystem::path localCfg = exeDir() / "yeti-desktop-config.json";
         std::ofstream cfgFile(localCfg);
         cfgFile << "{\n"
                 << "  \"admin_key\": \"" << m_adminKey << "\",\n"
-                << "  \"server_port\":8080\n"
+                << "  \"server_host\": \"" << m_config.host << "\",\n"
                 << "  \"server_port\": " << m_config.port << "\n"
                 << "}\n";
         cfgFile.close();
     }
-    onProgress("Запуск сервера...");
+
+    LogBuffer::instance()->add("Starting server...");
     if (!startService()) return false;
 
-    onProgress("Готово. Сервер запущен.");
+    LogBuffer::instance()->add("Server deployed successfully");
     disconnect();
     return true;
 }
@@ -128,7 +121,7 @@ bool SshDeployer::connectSsh()
 {
     m_session = ssh_new();
     if (!m_session) {
-        m_error = "Не удалось создать SSH-сессию";
+        LogBuffer::instance()->add("ERROR: Failed to create SSH session");
         return false;
     }
 
@@ -136,24 +129,22 @@ bool SshDeployer::connectSsh()
     ssh_options_set(m_session, SSH_OPTIONS_PORT, &m_config.port);
     ssh_options_set(m_session, SSH_OPTIONS_USER, m_config.user.c_str());
 
-    // Без логов libssh
     int verbosity = SSH_LOG_NOLOG;
     ssh_options_set(m_session, SSH_OPTIONS_LOG_VERBOSITY, &verbosity);
 
     int rc = ssh_connect(m_session);
     if (rc != SSH_OK) {
-        m_error = "Не удалось подключиться: " + std::string(ssh_get_error(m_session));
+        LogBuffer::instance()->add("ERROR: Connection failed: " + std::string(ssh_get_error(m_session)));
         disconnect();
         return false;
     }
 
-    // Пропускаем проверку ключа (для тестов — ОК, в проде надо проверять)
     ssh_options_set(m_session, SSH_OPTIONS_HOSTKEYS, "auto");
     ssh_options_set(m_session, SSH_OPTIONS_STRICTHOSTKEYCHECK, "no");
 
     rc = ssh_userauth_password(m_session, nullptr, m_config.password.c_str());
     if (rc != SSH_AUTH_SUCCESS) {
-        m_error = "Аутентификация не удалась. Проверьте логин/пароль.";
+        LogBuffer::instance()->add("ERROR: Authentication failed");
         disconnect();
         return false;
     }
@@ -167,14 +158,14 @@ bool SshDeployer::execCommand(const std::string &cmd, std::string &output)
 {
     ssh_channel channel = ssh_channel_new(m_session);
     if (!channel) {
-        m_error = "Не удалось создать SSH-канал";
+        LogBuffer::instance()->add("ERROR: Failed to create SSH channel");
         return false;
     }
 
     int rc = ssh_channel_open_session(channel);
     if (rc != SSH_OK) {
         ssh_channel_free(channel);
-        m_error = "Не удалось открыть SSH-канал";
+        LogBuffer::instance()->add("ERROR: Failed to open SSH channel");
         return false;
     }
 
@@ -182,11 +173,10 @@ bool SshDeployer::execCommand(const std::string &cmd, std::string &output)
     if (rc != SSH_OK) {
         ssh_channel_close(channel);
         ssh_channel_free(channel);
-        m_error = "Не удалось выполнить команду: " + cmd;
+        LogBuffer::instance()->add("ERROR: Failed to execute command: " + cmd);
         return false;
     }
 
-    // Читаем stdout
     char buffer[4096];
     int bytesRead;
     output.clear();
@@ -198,7 +188,6 @@ bool SshDeployer::execCommand(const std::string &cmd, std::string &output)
         bytesRead = ssh_channel_read(channel, buffer, sizeof(buffer) - 1, 0);
     }
 
-    // Читаем stderr (добавляем к output)
     bytesRead = ssh_channel_read(channel, buffer, sizeof(buffer) - 1, 1);
     while (bytesRead > 0) {
         buffer[bytesRead] = '\0';
@@ -224,7 +213,7 @@ bool SshDeployer::uploadConfigFile(const std::string &localPath, const std::stri
 
     std::ifstream file(localPath, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
-        m_error = "Не удалось открыть конфиг: " + localPath;
+        LogBuffer::instance()->add("ERROR: Failed to open config: " + localPath);
         return false;
     }
 
@@ -233,14 +222,14 @@ bool SshDeployer::uploadConfigFile(const std::string &localPath, const std::stri
 
     ssh_scp scp = ssh_scp_new(m_session, SSH_SCP_WRITE, remoteDir.string().c_str());
     if (!scp) {
-        m_error = "SCP: " + std::string(ssh_get_error(m_session));
+        LogBuffer::instance()->add("ERROR: SCP: " + std::string(ssh_get_error(m_session)));
         return false;
     }
 
     int rc = ssh_scp_init(scp);
     if (rc != SSH_OK) {
         ssh_scp_free(scp);
-        m_error = "SCP init: " + std::string(ssh_get_error(m_session));
+        LogBuffer::instance()->add("ERROR: SCP init: " + std::string(ssh_get_error(m_session)));
         return false;
     }
 
@@ -249,7 +238,7 @@ bool SshDeployer::uploadConfigFile(const std::string &localPath, const std::stri
     if (rc != SSH_OK) {
         ssh_scp_close(scp);
         ssh_scp_free(scp);
-        m_error = "SCP push: " + std::string(ssh_get_error(m_session));
+        LogBuffer::instance()->add("ERROR: SCP push: " + std::string(ssh_get_error(m_session)));
         return false;
     }
 
@@ -260,7 +249,7 @@ bool SshDeployer::uploadConfigFile(const std::string &localPath, const std::stri
         if (rc != SSH_OK) {
             ssh_scp_close(scp);
             ssh_scp_free(scp);
-            m_error = "SCP write error";
+            LogBuffer::instance()->add("ERROR: SCP write error");
             return false;
         }
     }
@@ -274,7 +263,6 @@ bool SshDeployer::uploadConfigFile(const std::string &localPath, const std::stri
 
 bool SshDeployer::uploadFile(const std::string &localPath, const std::string &remotePath)
 {
-    // Определяем полный путь к бинарнику
     std::filesystem::path fullLocalPath;
 #ifdef _WIN32
     char exeBuf[MAX_PATH];
@@ -285,11 +273,10 @@ bool SshDeployer::uploadFile(const std::string &localPath, const std::string &re
 #endif
 
     if (!std::filesystem::exists(fullLocalPath)) {
-        m_error = "Бинарник не найден: " + fullLocalPath.string();
+        LogBuffer::instance()->add("ERROR: Binary not found: " + fullLocalPath.string());
         return false;
     }
 
-    // Создаём директорию на сервере
     std::filesystem::path remoteDir = std::filesystem::path(remotePath).parent_path();
     std::string mkdirCmd = "mkdir -p " + remoteDir.string() + " && chmod 755 " + remoteDir.string();
     std::string dummy;
@@ -299,27 +286,25 @@ bool SshDeployer::uploadFile(const std::string &localPath, const std::string &re
     std::string cleanup;
     execCommand(cleanupCmd, cleanup);
 
-    // Открываем локальный файл
     std::ifstream file(fullLocalPath, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
-        m_error = "Не удалось открыть локальный файл: " + fullLocalPath.string();
+        LogBuffer::instance()->add("ERROR: Failed to open local file: " + fullLocalPath.string());
         return false;
     }
 
     size_t fileSize = file.tellg();
     file.seekg(0);
 
-    // SCP-сессия
     ssh_scp scp = ssh_scp_new(m_session, SSH_SCP_WRITE, remoteDir.string().c_str());
     if (!scp) {
-        m_error = "Не удалось создать SCP-сессию: " + std::string(ssh_get_error(m_session));
+        LogBuffer::instance()->add("ERROR: Failed to create SCP session: " + std::string(ssh_get_error(m_session)));
         return false;
     }
 
     int rc = ssh_scp_init(scp);
     if (rc != SSH_OK) {
         ssh_scp_free(scp);
-        m_error = "Не удалось инициализировать SCP: " + std::string(ssh_get_error(m_session));
+        LogBuffer::instance()->add("ERROR: SCP init failed: " + std::string(ssh_get_error(m_session)));
         return false;
     }
 
@@ -328,11 +313,10 @@ bool SshDeployer::uploadFile(const std::string &localPath, const std::string &re
     if (rc != SSH_OK) {
         ssh_scp_close(scp);
         ssh_scp_free(scp);
-        m_error = "Не удалось создать файл на сервере: " + std::string(ssh_get_error(m_session));
+        LogBuffer::instance()->add("ERROR: Failed to create file on server: " + std::string(ssh_get_error(m_session)));
         return false;
     }
 
-    // Пишем чанками
     const size_t CHUNK = 16384;
     char buffer[CHUNK];
     while (file.read(buffer, CHUNK) || file.gcount() > 0) {
@@ -340,7 +324,7 @@ bool SshDeployer::uploadFile(const std::string &localPath, const std::string &re
         if (rc != SSH_OK) {
             ssh_scp_close(scp);
             ssh_scp_free(scp);
-            m_error = "Ошибка при загрузке файла";
+            LogBuffer::instance()->add("ERROR: Upload error");
             return false;
         }
     }
@@ -357,10 +341,8 @@ bool SshDeployer::startService()
 {
     std::string output;
 
-    // Убиваем старый процесс
     execCommand("pkill yeti-server 2>/dev/null; sleep 1; echo OK", output);
 
-    // Запускаем новый в фоне
     std::string cmd =
         "chmod +x /opt/yeti-server/yeti-server && "
         "sh -c '(nohup /opt/yeti-server/yeti-server </dev/null >/opt/yeti-server/server.log 2>&1 &)' && echo OK";
@@ -368,7 +350,7 @@ bool SshDeployer::startService()
     if (!execCommand(cmd, output)) return false;
 
     if (output.find("OK") == std::string::npos) {
-        m_error = "Не удалось запустить сервер: " + output;
+        LogBuffer::instance()->add("ERROR: Failed to start server: " + output);
         return false;
     }
 

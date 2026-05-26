@@ -4,6 +4,11 @@ project(YetiDesktop VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Fix parallel build PDB conflict
+if(MSVC)
+    add_compile_options(/FS)
+endif()
+
 # vcpkg toolchain
 if(DEFINED ENV{VCPKG_ROOT})
     set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
@@ -12,7 +17,7 @@ endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network WebSockets)
 
-# ── Go server build (cross-compile to Linux) ──────────────────────────────
+# ───── Go server build (cross-compile to Linux) ──────────────────────────────
 set(YETI_SERVER_SRC "${CMAKE_SOURCE_DIR}/../server")
 set(YETI_SERVER_OUT "${CMAKE_BINARY_DIR}/ui/${CMAKE_CFG_INTDIR}/yeti-server")
 

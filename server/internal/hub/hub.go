@@ -41,19 +41,17 @@ type Hub struct {
 	unregister chan *Client
 	broadcast  chan *Message
 	tokens     *auth.TokenStore
-	adminKey   string
 	mu         sync.RWMutex
 	stop       chan struct{}
 }
 
-func NewHub(tokens *auth.TokenStore, adminKey string) *Hub {
+func NewHub(tokens *auth.TokenStore) *Hub {
 	return &Hub{
 		clients:    make(map[string]*Client),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		broadcast:  make(chan *Message, 256),
 		tokens:     tokens,
-		adminKey:   adminKey,
 		stop:       make(chan struct{}),
 	}
 }
@@ -65,7 +63,7 @@ func (h *Hub) Run() {
 			h.mu.Lock()
 			h.clients[client.Device.DeviceID] = client
 			h.mu.Unlock()
-			log.Printf("Device connected: %s (%s)", client.Device.DeviceID, client.Device.RemoteAddr)
+			log.Printf("Device connected: %s (%s) - %s", client.Device.DeviceID, client.Device.DeviceName, client.Device.RemoteAddr)
 			h.checkLocalPeers(client)
 
 		case client := <-h.unregister:
@@ -104,16 +102,29 @@ func (h *Hub) Run() {
 
 func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
+	deviceID := r.URL.Query().Get("device_id")
 
-	// Accept admin key or valid device token
-	if token == "" || token != h.adminKey {
-		dev, valid := h.tokens.ValidateDeviceToken(token)
-		if !valid {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		_ = dev // device info available for future use
+	// Token is required
+	if token == "" {
+		http.Error(w, "Unauthorized: token required", http.StatusUnauthorized)
+		return
 	}
+
+	// Validate device token
+	devInfo, valid := h.tokens.ValidateDeviceToken(token)
+	if !valid {
+		http.Error(w, "Unauthorized: invalid token", http.StatusUnauthorized)
+		return
+	}
+
+	// Ensure device_id matches
+	if deviceID != "" && deviceID != devInfo.DeviceID {
+		http.Error(w, "Unauthorized: device_id mismatch", http.StatusUnauthorized)
+		return
+	}
+
+	// Use device_id from token
+	actualDeviceID := devInfo.DeviceID
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -121,10 +132,16 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get device name from query or use from token
+	deviceName := r.URL.Query().Get("device_name")
+	if deviceName == "" {
+		deviceName = devInfo.DeviceName
+	}
+
 	client := &Client{
 		Device: DeviceInfo{
-			DeviceID:   r.URL.Query().Get("device_id"),
-			DeviceName: r.URL.Query().Get("device_name"),
+			DeviceID:   actualDeviceID,
+			DeviceName: devInfo.DeviceName,
 			LocalIP:    r.URL.Query().Get("local_ip"),
 			RemoteAddr: r.RemoteAddr,
 		},
@@ -133,14 +150,15 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		Hub:  h,
 	}
 
-	if client.Device.DeviceID == "" {
-		client.Device.DeviceID = "admin-client"
-	}
-	if client.Device.DeviceName == "" {
-		client.Device.DeviceName = "Admin"
-	}
-
 	h.register <- client
+
+	// Send welcome message
+	welcomeMsg := Message{
+		Type:    "hello",
+		Payload: json.RawMessage(`{"message":"Connected to Yeti Cloud server","device_id":"` + actualDeviceID + `"}`),
+	}
+	welcomeData, _ := json.Marshal(welcomeMsg)
+	client.Send <- welcomeData
 
 	go client.writePump()
 	go client.readPump()
@@ -175,7 +193,9 @@ func (h *Hub) checkLocalPeers(client *Client) {
 				FromDevice: other.Device.DeviceID,
 			}
 			payload, _ := json.Marshal(map[string]string{
-				"local_ip": other.Device.LocalIP,
+				"local_ip":    other.Device.LocalIP,
+				"device_id":   other.Device.DeviceID,
+				"device_name": other.Device.DeviceName,
 			})
 			msg.Payload = payload
 

@@ -8,6 +8,8 @@ add_executable(yeti-desktop
     add_server_page.cpp
     status_page.h
     status_page.cpp
+    console_widget.cpp
+    console_widget.h
 )
 
 set_target_properties(yeti-desktop PROPERTIES
