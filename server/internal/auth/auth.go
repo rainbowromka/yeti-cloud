@@ -4,8 +4,11 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"sync"
 	"time"
+
+	"github.com/rainbowromka/yeti-cloud/server/internal/config"
 )
 
 type TokenType string
@@ -33,14 +36,44 @@ type DeviceInfo struct {
 
 type TokenStore struct {
 	mu     sync.RWMutex
-	tokens map[string]*TokenInfo // hash → info
+	tokens map[string]*TokenInfo // in-memory для invite/admin токенов (временных)
+	cfg    *config.ServerConfig  // персистентное хранилище для device-токенов
 }
 
-func NewTokenStore() *TokenStore {
+func NewTokenStore(cfg *config.ServerConfig) *TokenStore {
 	ts := &TokenStore{
 		tokens: make(map[string]*TokenInfo),
+		cfg:    cfg,
 	}
+	// Загружаем device-токены из конфига в память для быстрого доступа
+	ts.loadDevicesFromConfig()
 	return ts
+}
+
+// loadDevicesFromConfig загружает device-токены из конфига в память
+func (ts *TokenStore) loadDevicesFromConfig() {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+
+	for _, device := range ts.cfg.Devices {
+		// Восстанавливаем TokenInfo из конфига
+		// Note: device_key_hash уже сохранён, но сам токен мы не храним
+		// Для валидации нам нужно сравнить хеш входящего токена с device_key_hash
+		// Поэтому мы сохраняем в памяти маппинг hash -> DeviceInfo
+		ts.tokens[device.DeviceKeyHash] = &TokenInfo{
+			Hash:       device.DeviceKeyHash,
+			Type:       TokenDevice,
+			DeviceID:   device.DeviceID,
+			DeviceName: device.Name,
+			CreatedAt:  parseTime(device.RegisteredAt),
+			ExpiresAt:  time.Now().Add(365 * 24 * time.Hour), // 1 year
+		}
+	}
+}
+
+func parseTime(timeStr string) time.Time {
+	t, _ := time.Parse(time.RFC3339, timeStr)
+	return t
 }
 
 func (ts *TokenStore) GenerateAdminToken() string {
@@ -58,30 +91,35 @@ func (ts *TokenStore) GenerateAdminToken() string {
 	return token
 }
 
-// Изменение: теперь возвращает (string, time.Time)
 func (ts *TokenStore) GenerateInviteToken() (string, time.Time) {
 	token := generateToken()
 	hash := hashToken(token)
+	expiresAt := time.Now().Add(24 * time.Hour)
 
 	ts.mu.Lock()
 	info := &TokenInfo{
 		Hash:      hash,
 		Type:      TokenInvite,
 		CreatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(24 * time.Hour),
+		ExpiresAt: expiresAt,
 		Used:      false,
 	}
 	ts.tokens[hash] = info
 	ts.mu.Unlock()
 
-	// Изменение: возвращаем и токен, и время истечения
-	return token, info.ExpiresAt
+	return token, expiresAt
 }
 
-func (ts *TokenStore) GenerateDeviceToken(deviceID, deviceName string) string {
+func (ts *TokenStore) GenerateDeviceToken(deviceID, deviceName string) (string, error) {
 	token := generateToken()
 	hash := hashToken(token)
 
+	// Сохраняем в конфиг (персистентно)
+	if err := ts.cfg.AddDevice(deviceID, hash, deviceName); err != nil {
+		return "", fmt.Errorf("failed to save device: %w", err)
+	}
+
+	// Сохраняем в память
 	ts.mu.Lock()
 	ts.tokens[hash] = &TokenInfo{
 		Hash:       hash,
@@ -93,7 +131,7 @@ func (ts *TokenStore) GenerateDeviceToken(deviceID, deviceName string) string {
 	}
 	ts.mu.Unlock()
 
-	return token
+	return token, nil
 }
 
 func (ts *TokenStore) ValidateAdminToken(token string) bool {
@@ -146,7 +184,6 @@ func (ts *TokenStore) ValidateDeviceToken(token string) (*DeviceInfo, bool) {
 	}, true
 }
 
-// Добавлено: новый метод GetDevices
 func (ts *TokenStore) GetDevices() []DeviceInfo {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
@@ -161,6 +198,23 @@ func (ts *TokenStore) GetDevices() []DeviceInfo {
 		}
 	}
 	return devices
+}
+
+// RevokeDevice удаляет устройство по ID
+func (ts *TokenStore) RevokeDevice(deviceID string) error {
+	if err := ts.cfg.RemoveDevice(deviceID); err != nil {
+		return err
+	}
+
+	// Удаляем из памяти
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for hash, info := range ts.tokens {
+		if info.Type == TokenDevice && info.DeviceID == deviceID {
+			delete(ts.tokens, hash)
+		}
+	}
+	return nil
 }
 
 func (ts *TokenStore) validate(token string, tokenType TokenType) bool {

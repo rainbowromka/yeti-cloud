@@ -101,7 +101,12 @@ func (h *Handler) HandleRegisterDevice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	deviceID := generateDeviceID()
-	deviceKey := h.tokens.GenerateDeviceToken(deviceID, req.DeviceName)
+	deviceKey, err := h.tokens.GenerateDeviceToken(deviceID, req.DeviceName)
+	if err != nil {
+		log.Printf("Failed to generate device token: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 
 	resp := RegisterDeviceResponse{
 		DeviceKey: deviceKey,

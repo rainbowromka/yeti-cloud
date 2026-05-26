@@ -58,6 +58,11 @@ StatusPage::StatusPage(QWidget *parent)
     m_keyLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     layout->addWidget(m_keyLabel);
 
+    // --- Статус операции ---
+    m_statusLabel = new QLabel("");
+    m_statusLabel->setStyleSheet("font-size: 12px; color: #666; font-style: italic;");
+    layout->addWidget(m_statusLabel);
+
     layout->addStretch();
 }
 
@@ -98,4 +103,9 @@ void StatusPage::setAdminKey(const QString &key)
         m_keyLabel->setText("Ключ: " + key.left(16) + "...");
         m_keyLabel->setToolTip(key);
     }
+}
+
+void StatusPage::setStatusText(const QString &text)
+{
+    m_statusLabel->setText(text);
 }

@@ -4,7 +4,6 @@
 #include <functional>
 #include <memory>
 
-// forward declare (не тянем libssh в заголовок)
 struct ssh_session_struct;
 typedef struct ssh_session_struct* ssh_session;
 
@@ -23,14 +22,12 @@ public:
     explicit SshDeployer(const Config &config);
     ~SshDeployer();
 
-    bool deploy(ProgressCallback onProgress);
-    std::string lastError() const;
+    bool deploy();
     const Config& config() const { return m_config; }
     const std::string& adminKey() const { return m_adminKey; }
 
 private:
     Config m_config;
-    std::string m_error;
     std::string m_adminKey;
     ssh_session m_session = nullptr;
 

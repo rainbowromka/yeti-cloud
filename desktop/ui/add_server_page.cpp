@@ -56,11 +56,6 @@ AddServerPage::AddServerPage(QWidget *parent)
     connect(m_deployBtn, &QPushButton::clicked, this, &AddServerPage::onDeploy);
     layout->addWidget(m_deployBtn);
 
-    m_statusLabel = new QLabel();
-    m_statusLabel->setWordWrap(true);
-    m_statusLabel->setStyleSheet("color: #999; margin-top: 8px;");
-    layout->addWidget(m_statusLabel);
-
     layout->addStretch();
 }
 
@@ -72,11 +67,9 @@ void AddServerPage::onDeploy()
     int port = m_portEdit->text().toInt();
 
     if (host.isEmpty() || user.isEmpty() || password.isEmpty()) {
-        m_statusLabel->setText("Заполните все поля.");
         return;
     }
 
-    m_statusLabel->setText("Подключение к " + host + ":" + QString::number(port) + "...");
     m_deployBtn->setEnabled(false);
 
     auto config = new SshDeployer::Config;
@@ -91,25 +84,18 @@ void AddServerPage::onDeploy()
     QObject::connect(watcher, &QFutureWatcher<bool>::finished, this, [this, deployer, watcher, config]() {
         bool ok = watcher->result();
         if (ok) {
-            m_statusLabel->setText("Готово! Сервер запущен.");
             emit serverAdded(
                 QString::fromStdString(config->host),
                 QString::fromStdString(deployer->adminKey()));
-        } else {
-            m_statusLabel->setText("Ошибка: " + QString::fromStdString(deployer->lastError()));
-            m_deployBtn->setEnabled(true);
         }
+        m_deployBtn->setEnabled(true);
         delete deployer;
         delete config;
         watcher->deleteLater();
     });
 
-    QFuture<bool> future = QtConcurrent::run([deployer, this]() {
-        return deployer->deploy([this](const std::string &step) {
-            QMetaObject::invokeMethod(this, [this, step]() {
-                m_statusLabel->setText(QString::fromStdString(step));
-            }, Qt::QueuedConnection);
-        });
+    QFuture<bool> future = QtConcurrent::run([deployer]() {
+        return deployer->deploy();
     });
 
     watcher->setFuture(future);
