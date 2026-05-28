@@ -7,6 +7,7 @@ class LogBuffer;
 class HttpClient;
 class ConfigManager;
 class QWebSocket;
+class QTimer;
 
 class Client : public QObject
 {
@@ -30,6 +31,10 @@ signals:
     void disconnected();
     void errorOccurred(const QString& error);
 
+private slots:
+    void onPingTimeout();
+    void tryReconnect();
+
 private:
     void connectWebSocket(const QString& host, int port,
                           const QString& deviceKey, const QString& deviceId);
@@ -38,10 +43,15 @@ private:
     ConfigManager* m_cfg;
     HttpClient* m_httpClient;
     QWebSocket* m_webSocket;
+    QTimer* m_pingTimer;
+    QTimer* m_reconnectTimer;
 
     QString m_host;
     int m_port = 0;
     QString m_deviceKey;
     QString m_deviceId;
     bool m_connecting = false;
+    bool m_intentionalDisconnect = false;
+    int m_reconnectAttempts = 0;
+    static const int MAX_RECONNECT_ATTEMPTS = 5;
 };
