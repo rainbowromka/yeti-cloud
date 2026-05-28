@@ -4,33 +4,23 @@
 #include "config_manager.h"
 
 #include <QWebSocket>
-#include <QDebug>
+#include <QTimer>
+#include <QUrl>
 
 Client::Client(QObject* parent)
     : QObject(parent)
     , m_log(LogBuffer::instance())
     , m_cfg(&ConfigManager::instance())
     , m_httpClient(new HttpClient(this))
-    , m_webSocket(new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this))
+    , m_webSocket(nullptr)
+    , m_pingTimer(new QTimer(this))
+    , m_reconnectTimer(new QTimer(this))
 {
-    connect(m_webSocket, &QWebSocket::connected, this, [this]() {
-        m_log->add("WebSocket connected");
-        m_connecting = false;
-        emit connected();
-    });
-    connect(m_webSocket, &QWebSocket::disconnected, this, [this]() {
-        m_log->add("WebSocket disconnected");
-        emit disconnected();
-    });
-    connect(m_webSocket, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error),
-            this, [this](QAbstractSocket::SocketError) {
-        m_log->add("WebSocket error: " + m_webSocket->errorString().toStdString());
-        m_connecting = false;
-        emit errorOccurred(m_webSocket->errorString());
-    });
-    connect(m_webSocket, &QWebSocket::textMessageReceived, this, [this](const QString& msg) {
-        m_log->add("WS message: " + msg.toStdString());
-    });
+    m_pingTimer->setInterval(30000);
+    connect(m_pingTimer, &QTimer::timeout, this, &Client::onPingTimeout);
+
+    m_reconnectTimer->setSingleShot(true);
+    connect(m_reconnectTimer, &QTimer::timeout, this, &Client::tryReconnect);
 
     m_log->add("Client created");
 }
@@ -42,7 +32,7 @@ Client::~Client()
 
 bool Client::isConnected() const
 {
-    return m_webSocket->state() == QAbstractSocket::ConnectedState;
+    return m_webSocket && m_webSocket->state() == QAbstractSocket::ConnectedState;
 }
 
 // ─── Слоты ───
@@ -64,6 +54,10 @@ void Client::start()
     QString deviceId = m_cfg->getDeviceId();
 
     if (!deviceKey.isEmpty() && !deviceId.isEmpty()) {
+        m_host = host;
+        m_port = port;
+        m_deviceKey = deviceKey;
+        m_deviceId = deviceId;
         m_log->add("Found device credentials, connecting WebSocket");
         connectWebSocket(host, port, deviceKey, deviceId);
     } else if (!adminKey.isEmpty()) {
@@ -82,6 +76,7 @@ void Client::connectToServer(const QString& host, int port,
         return;
     }
     m_connecting = true;
+    m_intentionalDisconnect = false;
 
     m_host = host;
     m_port = port;
@@ -116,11 +111,21 @@ void Client::connectToServer(const QString& host, int port,
 void Client::disconnectFromServer()
 {
     m_log->add("Disconnecting...");
+    m_intentionalDisconnect = true;
     m_connecting = false;
-    if (m_webSocket->state() == QAbstractSocket::ConnectedState ||
-        m_webSocket->state() == QAbstractSocket::ConnectingState) {
-        m_webSocket->close();
+    m_reconnectTimer->stop();
+    m_pingTimer->stop();
+    m_reconnectAttempts = 0;
+
+    if (m_webSocket) {
+        if (m_webSocket->state() == QAbstractSocket::ConnectedState ||
+            m_webSocket->state() == QAbstractSocket::ConnectingState) {
+            m_webSocket->close();
+        }
+        m_webSocket->deleteLater();
+        m_webSocket = nullptr;
     }
+
     emit disconnected();
 }
 
@@ -129,8 +134,76 @@ void Client::disconnectFromServer()
 void Client::connectWebSocket(const QString& host, int port,
                                const QString& deviceKey, const QString& deviceId)
 {
+    if (m_webSocket) {
+        m_webSocket->deleteLater();
+    }
+
+    m_webSocket = new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this);
+
+    connect(m_webSocket, &QWebSocket::connected, this, [this]() {
+        m_log->add("WebSocket connected");
+        m_connecting = false;
+        m_reconnectAttempts = 0;
+        m_pingTimer->start();
+        emit connected();
+    });
+
+    connect(m_webSocket, &QWebSocket::disconnected, this, [this]() {
+        m_log->add("WebSocket disconnected");
+        m_pingTimer->stop();
+
+        if (!m_intentionalDisconnect && m_reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            int delay = (m_reconnectAttempts == 0) ? 5000 : 10000;
+            m_log->add("Reconnecting in " + std::to_string(delay / 1000) + "s...");
+            m_reconnectTimer->start(delay);
+        } else if (!m_intentionalDisconnect) {
+            m_log->add("Max reconnect attempts reached");
+            m_connecting = false;
+            emit errorOccurred("Connection lost");
+        }
+
+        emit disconnected();
+    });
+
+    connect(m_webSocket, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error),
+            this, [this](QAbstractSocket::SocketError) {
+        m_log->add("WebSocket error: " + m_webSocket->errorString().toStdString());
+    });
+
+    connect(m_webSocket, &QWebSocket::textMessageReceived, this, [this](const QString& msg) {
+        m_log->add("WS message: " + msg.toStdString());
+    });
+
+    connect(m_webSocket, &QWebSocket::pong, this, [](quint64, const QByteArray&) {
+        // pong received — connection alive
+    });
+
     QString url = QString("ws://%1:%2/ws?token=%3&device_id=%4")
                   .arg(host).arg(port).arg(deviceKey).arg(deviceId);
     m_log->add("Opening WebSocket: " + url.toStdString());
     m_webSocket->open(QUrl(url));
+}
+
+void Client::onPingTimeout()
+{
+    if (m_webSocket && m_webSocket->state() == QAbstractSocket::ConnectedState) {
+        m_webSocket->ping();
+    }
+}
+
+void Client::tryReconnect()
+{
+    if (m_intentionalDisconnect) {
+        return;
+    }
+
+    m_reconnectAttempts++;
+    m_log->add("Reconnect attempt " + std::to_string(m_reconnectAttempts));
+
+    if (!m_deviceKey.isEmpty() && !m_deviceId.isEmpty()) {
+        connectWebSocket(m_host, m_port, m_deviceKey, m_deviceId);
+    } else {
+        m_log->add("No device credentials, cannot reconnect");
+        m_connecting = false;
+    }
 }
