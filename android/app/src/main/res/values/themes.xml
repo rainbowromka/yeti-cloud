@@ -1,0 +1,9 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Base.Theme.YetiCloud" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="android:textColorSecondary">@android:color/white</item>
+    </style>
+
+    <style name="Theme.YetiCloud" parent="Base.Theme.YetiCloud" />
+</resources>
