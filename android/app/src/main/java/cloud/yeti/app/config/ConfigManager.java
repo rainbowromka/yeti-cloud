@@ -18,21 +18,33 @@ public class ConfigManager {
     private String adminKey;
     private String deviceKey;
     private String deviceId;
+    private boolean isLoaded = false;
 
-    private ConfigManager(Context context) {
-        configFile = new File(context.getFilesDir(), "yeti-config.json");
+    private ConfigManager(File configFile) {
+        this.configFile = configFile;
     }
 
-    public static synchronized ConfigManager getInstance(Context context) {
+    public static synchronized ConfigManager getInstance(File configFile) {
         if (instance == null) {
-            instance = new ConfigManager(context.getApplicationContext());
+            instance = new ConfigManager(new File(configFile,  "yeti-config.json"));
         }
         return instance;
     }
 
-    public boolean load() {
+    public static synchronized ConfigManager getInstance()
+    throws HasNoConfig
+    {
+        if (instance == null) {
+            throw new HasNoConfig("Error open file configuration");
+        }
+        return instance;
+    }
+
+    public ConfigManager load()
+    {
         if (!configFile.exists()) {
-            return false;
+            isLoaded = false;
+            return this;
         }
         try (FileInputStream fis = new FileInputStream(configFile)) {
             byte[] data = new byte[(int) configFile.length()];
@@ -44,10 +56,11 @@ public class ConfigManager {
             adminKey = json.optString("admin_key", "");
             deviceKey = json.optString("device_key", "");
             deviceId = json.optString("device_id", "");
-            return true;
+            isLoaded = true;
         } catch (Exception e) {
-            return false;
+            isLoaded = false;
         }
+        return this;
     }
 
     public void save() {
@@ -62,6 +75,7 @@ public class ConfigManager {
             try (FileOutputStream fos = new FileOutputStream(configFile)) {
                 fos.write(json.toString(2).getBytes(StandardCharsets.UTF_8));
             }
+            isLoaded = true;
         } catch (Exception e) {
             // ignore
         }
@@ -81,6 +95,8 @@ public class ConfigManager {
 
     public String getDeviceId() { return deviceId; }
     public void setDeviceId(String id) { this.deviceId = id; }
+
+    public boolean isLoaded() {return this.isLoaded; }
 
     public boolean hasConfig() {
         return configFile.exists();

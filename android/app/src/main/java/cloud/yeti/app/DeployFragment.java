@@ -50,10 +50,10 @@ public class DeployFragment extends Fragment {
                 requireActivity().getFilesDir())
         {
             @Override
-            protected void connectWithKey(String adminKey) {
+            protected void connectWithKey() {
                 requireActivity().runOnUiThread(() -> {
                     if (getActivity() instanceof MainActivity) {
-                        ((MainActivity) getActivity()).connectWithKey(adminKey);
+                        ((MainActivity) getActivity()).connectWithKey();
                     }
                 });
             }

@@ -5,8 +5,10 @@ import android.os.Looper;
 
 import org.json.JSONObject;
 
+import java.io.File;
 import java.util.concurrent.TimeUnit;
 
+import cloud.yeti.app.config.ConfigManager;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
@@ -19,16 +21,10 @@ public class YetiClient {
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     private final OkHttpClient httpClient;
+    private final ConfigManager config;
     private WebSocket webSocket;
     private final Handler mainHandler;
 
-    private String serverHost;
-    private int serverPort;
-    private String adminKey;
-    private String deviceKey;
-    private String deviceId;
-
-    // Callback interface for UI
     public interface Callback {
         void onLog(String message);
         void onConnected();
@@ -38,7 +34,9 @@ public class YetiClient {
 
     private Callback callback;
 
-    public YetiClient() {
+    public YetiClient(ConfigManager config)
+    {
+        this.config = config;
         this.httpClient = new OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(10, TimeUnit.SECONDS)
@@ -46,17 +44,29 @@ public class YetiClient {
         this.mainHandler = new Handler(Looper.getMainLooper());
     }
 
-    public void setCallback(Callback callback) {
+    public YetiClient setCallback(Callback callback) {
         this.callback = callback;
+        return this;
     }
 
-    public void connect(String host, int port, String adminKey) {
-        this.serverHost = host;
-        this.serverPort = port;
-        this.adminKey = adminKey;
+    public void connect() {
+        if (!config.isLoaded()) {
+            log("Server settings are missing.");
+            return;
+        }
 
-        log("Connecting to " + host + ":" + port);
-        stepInvite();
+        String deviceKey = config.getDeviceKey();
+        String deviceId = config.getDeviceId();
+
+        if (deviceKey != null && !deviceKey.isEmpty() && deviceId != null && !deviceId.isEmpty()) {
+            // Уже зарегистрирован — сразу WebSocket
+            log("Already registered, connecting WebSocket");
+            connectWebSocket();
+        } else {
+            // Не зарегистрирован — HTTP-регистрация
+            log("Starting HTTP registration");
+            stepInvite();
+        }
     }
 
     public void disconnect() {
@@ -71,10 +81,10 @@ public class YetiClient {
     private void stepInvite() {
         log("Step 1: Creating invite...");
 
-        String url = "http://" + serverHost + ":" + serverPort + "/api/invite";
+        String url = "http://" + config.getServerHost() + ":" + config.getServerPort() + "/api/invite";
         Request request = new Request.Builder()
                 .url(url)
-                .header("Authorization", "Bearer " + adminKey)
+                .header("Authorization", "Bearer " + config.getAdminKey())
                 .post(RequestBody.create("", JSON))
                 .build();
 
@@ -115,7 +125,8 @@ public class YetiClient {
     private void stepRegister(String inviteToken) {
         log("Step 2: Registering device...");
 
-        String url = "http://" + serverHost + ":" + serverPort + "/api/register";
+        String url = "http://" + config.getServerHost() + ":" + config.getServerPort()
+            + "/api/register";
 
         try {
             JSONObject body = new JSONObject();
@@ -146,9 +157,10 @@ public class YetiClient {
                     try {
                         String body = response.body().string();
                         JSONObject json = new JSONObject(body);
-                        deviceKey = json.getString("device_key");
-                        deviceId = json.getString("device_id");
-                        log("Device registered: " + deviceId);
+                        config.setDeviceKey(json.getString("device_key"));
+                        config.setDeviceId(json.getString("device_id"));
+                        log("Device registered: " + config.getDeviceId());
+                        config.save();
                         response.close();
                         connectWebSocket();
                     } catch (Exception e) {
@@ -167,8 +179,8 @@ public class YetiClient {
     // ─── Step 3: WebSocket ───
 
     private void connectWebSocket() {
-        String wsUrl = "ws://" + serverHost + ":" + serverPort
-                + "/ws?token=" + deviceKey + "&device_id=" + deviceId;
+        String wsUrl = "ws://" + config.getServerHost() + ":" + config.getServerPort()
+                + "/ws?token=" + config.getDeviceKey() + "&device_id=" + config.getDeviceId();
         log("Opening WebSocket: " + wsUrl);
 
         Request request = new Request.Builder().url(wsUrl).build();

@@ -12,6 +12,11 @@ import androidx.fragment.app.Fragment;
 
 import com.yourapp.utils.Terminal;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+
 import cloud.yeti.app.config.ConfigManager;
 
 public class MainActivity extends AppCompatActivity {
@@ -21,11 +26,15 @@ public class MainActivity extends AppCompatActivity {
     private StatusFragment statusFragment;
     private DeployFragment deployFragment;
 
+    private ConfigManager config;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Terminal.getInstance().init(this::appendLog);
-//        ConfigManager.getInstance().init();
 
+        copyTestConfigIfExists();
+
+        config = ConfigManager.getInstance(getFilesDir()).load();
 
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
@@ -52,8 +61,8 @@ public class MainActivity extends AppCompatActivity {
         showFragment(statusFragment);
 
         // Клиент
-        client = new YetiClient();
-        client.setCallback(new YetiClient.Callback() {
+        client = new YetiClient(config).setCallback(new YetiClient.Callback()
+        {
             @Override
             public void onLog(String message) {
                 appendLog(message);
@@ -78,10 +87,40 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    public void connectWithKey(String adminKey) {
-        client.connect("192.168.0.53", 8080, adminKey);
+    private void copyTestConfigIfExists() {
+        try {
+            String[] assets = getAssets().list("");
+            boolean hasConfig = false;
+            if (assets != null) {
+                for (String name : assets) {
+                    if ("yeti-config.json".equals(name)) {
+                        hasConfig = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!hasConfig) return;
+
+            File configFile = new File(getFilesDir(), "yeti-config.json");
+            // Всегда заменяем при наличии в assets
+            try (InputStream is = getAssets().open("yeti-config.json");
+                 OutputStream os = new FileOutputStream(configFile, false)) {
+                byte[] buffer = new byte[8192];
+                int length;
+                while ((length = is.read(buffer)) > 0) {
+                    os.write(buffer, 0, length);
+                }
+            }
+        } catch (Exception e) {
+            // Если нет assets — продолжаем с обычным конфигом
+        }
+    }
+
+    public void connectWithKey() {
+        client.connect();
         showFragment(statusFragment);
-        statusFragment.setServerAddress("192.168.0.53:8080");
+        statusFragment.setServerAddress(config.getServerHost());
     }
 
     private void showFragment(Fragment fragment) {
@@ -106,8 +145,7 @@ public class MainActivity extends AppCompatActivity {
             showFragment(deployFragment);
             return true;
         } else if (id == R.id.action_connect) {
-            String key = "49b4e33a11239c3afc1956835837bccf9aa08d65d7895f251680ef34082eb62a";
-            connectWithKey(key);
+            connectWithKey();
             return true;
         } else if (id == R.id.action_disconnect) {
             client.disconnect();

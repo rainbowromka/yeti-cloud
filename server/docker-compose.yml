@@ -1,8 +1,13 @@
-version: '3.8'
 services:
-  test-vps:
-    build: .
+  yeti-test-vps:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: server-test-vps
+    container_name: yeti-test-vps
     ports:
       - "2222:22"
       - "8080:8080"
-    container_name: yeti-test-vps
+    volumes:
+      - ./config/yeti-server-config.json:/opt/yeti-server/yeti-server-config.json
+    restart: unless-stopped

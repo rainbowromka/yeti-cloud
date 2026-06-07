@@ -2,6 +2,7 @@
 build/
 cmake-build-*/
 out/
+test-sync/
 
 # IDE
 .vscode/
@@ -20,3 +21,4 @@ server/vendor/
 # OS
 .DS_Store
 Thumbs.db
+server/bin/yeti-server

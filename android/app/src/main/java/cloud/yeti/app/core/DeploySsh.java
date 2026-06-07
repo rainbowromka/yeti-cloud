@@ -15,20 +15,22 @@ import java.security.SecureRandom;
 
 import com.yourapp.utils.Terminal;
 
+import cloud.yeti.app.config.ConfigManager;
+
 public abstract class DeploySsh
 {
     private final Terminal terminal;
     private final String adminKey;
 
-    private String host;
-    private int port;
-    private String user;
-    private String password;
-    private File filesDir;
+    private final String host;
+    private final int port;
+    private final String user;
+    private final String password;
+    private final File filesDir;
 
     private Session session;
 
-    protected abstract void connectWithKey(String adminKey);
+    protected abstract void connectWithKey();
     protected abstract void handleEnableDeployButton();
     protected abstract InputStream getServerStream() throws Exception;
 
@@ -70,7 +72,7 @@ public abstract class DeploySsh
 
             log("Server deployed successfully");
             log("Admin key: " + adminKey);
-            connectWithKey(adminKey);
+            connectWithKey();
         } catch (DeployException e) {
             log(e.getMessage());
         } finally {
@@ -88,8 +90,8 @@ public abstract class DeploySsh
 
         // Для nohup — не ждём ответа, отправляем и выходим
         String cmd = "chmod +x /opt/yeti-server/yeti-server && " +
-            "sh -c '(nohup /opt/yeti-server/yeti-server </dev/null " +
-            ">/opt/yeti-server/server.log 2>&1 &)' && echo OK";
+            "chmod +x /opt/yeti-server/yeti-server && "
+            + "sh -c '(nohup /opt/yeti-server/yeti-server </dev/null >/opt/yeti-server/server.log 2>&1 &)' && echo OK";
 
         String startOut = execCommandNoWait(session, cmd);
         if (!startOut.contains("OK")) {
@@ -259,19 +261,19 @@ public abstract class DeploySsh
     }
 
     private void saveClientConfig()
-            throws DeployException
+        throws DeployException
     {
         log("Saving client config...");
+
         try {
-            String json = "{\n" +
-                    "  \"admin_key\": \"" + adminKey + "\",\n" +
-                    "  \"server_host\": \"" + host + "\",\n" +
-                    "  \"server_port\": 8080\n" +
-                    "}";
-            File configFile = new File(filesDir, "yeti-desktop-config.json");
-            try (FileOutputStream fos = new FileOutputStream(configFile)) {
-                fos.write(json.getBytes());
-            }
+            ConfigManager config = ConfigManager.getInstance();
+
+            config.setAdminKey(adminKey);
+            config.setServerHost(host);
+            config.setServerPort(8080);
+
+            config.save();
+
             log("Config saved");
         } catch (Exception e) {
             throw new DeployException("ERROR saving config: " + e.getMessage());

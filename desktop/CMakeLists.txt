@@ -29,7 +29,30 @@ add_custom_target(yeti-server-build ALL
     COMMENT "Building Go server for Linux → ${YETI_SERVER_OUT}"
 )
 
+# ───── Copy test config to build directory ───────────────────────────────────
+set(YETI_DESKTOP_CONFIG_SRC "${CMAKE_SOURCE_DIR}/config/windows/yeti-desktop-config.json")
+set(YETI_DESKTOP_CONFIG_DST "${CMAKE_BINARY_DIR}/ui/${CMAKE_CFG_INTDIR}/yeti-desktop-config.json")
+
+add_custom_target(yeti-config-copy ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${YETI_DESKTOP_CONFIG_SRC}"
+        "${YETI_DESKTOP_CONFIG_DST}"
+    COMMENT "Copying desktop test config → ${YETI_DESKTOP_CONFIG_DST}"
+)
+
+# ───── Copy Go server binary to server/bin for Docker ────────────────────────
+set(YETI_SERVER_DOCKER_DST "${CMAKE_SOURCE_DIR}/../server/bin/yeti-server")
+
+add_custom_target(yeti-server-copy ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_SOURCE_DIR}/../server/bin"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${YETI_SERVER_OUT}"
+        "${YETI_SERVER_DOCKER_DST}"
+    COMMENT "Copying server binary → ${YETI_SERVER_DOCKER_DST}"
+    DEPENDS yeti-server-build
+)
+
 add_subdirectory(core)
 add_subdirectory(ui)
 
-add_dependencies(yeti-desktop yeti-server-build)
+add_dependencies(yeti-desktop yeti-config-copy)
