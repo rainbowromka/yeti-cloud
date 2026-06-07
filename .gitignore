@@ -17,8 +17,8 @@ qrc_*.cpp
 # Go
 server/yeti-server
 server/vendor/
+server/bin/yeti-server
 
 # OS
 .DS_Store
 Thumbs.db
-server/bin/yeti-server
