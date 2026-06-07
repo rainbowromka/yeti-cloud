@@ -2,6 +2,7 @@
 build/
 cmake-build-*/
 out/
+test-sync/
 
 # IDE
 .vscode/
@@ -16,6 +17,7 @@ qrc_*.cpp
 # Go
 server/yeti-server
 server/vendor/
+server/bin/yeti-server
 
 # OS
 .DS_Store

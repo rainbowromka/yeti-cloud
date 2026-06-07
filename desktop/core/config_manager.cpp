@@ -87,11 +87,27 @@ QString ConfigManager::getAdminKey() const
     if (!m_loaded) {
         return QString();
     }
+    // Сначала пробуем зашифрованный
     QString encrypted = m_data.value("admin_key_enc").toString();
-    if (encrypted.isEmpty()) {
+    if (!encrypted.isEmpty()) {
+        return decrypt(encrypted);
+    }
+    // Fallback: открытый ключ (тестовая среда)
+    return m_data.value("admin_key").toString();
+}
+
+QString ConfigManager::getDeviceKey() const
+{
+    if (!m_loaded) {
         return QString();
     }
-    return decrypt(encrypted);
+    // Сначала пробуем зашифрованный
+    QString encrypted = m_data.value("device_key_enc").toString();
+    if (!encrypted.isEmpty()) {
+        return decrypt(encrypted);
+    }
+    // Fallback: открытый ключ (тестовая среда)
+    return m_data.value("device_key").toString();
 }
 
 QString ConfigManager::getServerHost() const
@@ -108,18 +124,6 @@ int ConfigManager::getServerPort() const
         return 8080;
     }
     return m_data.value("server_port").toInt(8080);
-}
-
-QString ConfigManager::getDeviceKey() const
-{
-    if (!m_loaded) {
-        return QString();
-    }
-    QString encrypted = m_data.value("device_key_enc").toString();
-    if (encrypted.isEmpty()) {
-        return QString();
-    }
-    return decrypt(encrypted);
 }
 
 QString ConfigManager::getDeviceId() const

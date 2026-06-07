@@ -1,0 +1,17 @@
+{
+  "admin_key": "test-admin-key-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "devices": [
+    {
+      "device_id": "1",
+      "device_key_hash": "sha256:3a029c12460a1c6ef7fd1b50acb0c7bdb7462cd686ee5f1004f9271c82a13b74",
+      "name": "Windows Desktop (Test)",
+      "registered_at": "2026-06-04T00:00:00Z"
+    },
+    {
+      "device_id": "2",
+      "device_key_hash": "sha256:39003d83bf08e51e45fe7ffb810442745e7bf32620b8a5d44b058ee83f1a5df4",
+      "name": "Android Phone (Test)",
+      "registered_at": "2026-06-04T00:00:00Z"
+    }
+  ]
+}

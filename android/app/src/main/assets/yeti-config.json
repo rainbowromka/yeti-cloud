@@ -1,0 +1,8 @@
+{
+  "admin_key": "test-admin-key-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "device_id": "2",
+  "device_key": "test-device-key-android-0123456789abcdef0123456789abcdef",
+  "server_host": "192.168.0.110",
+  "server_port": 8080,
+  "device_name": "Android Phone (Test)"
+}
